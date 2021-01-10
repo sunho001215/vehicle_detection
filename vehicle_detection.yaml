@@ -1,0 +1,17 @@
+img_path : "/home/sunho/vehicle_detection/CarMaker_data/backup_0109/images/000726.png"
+
+conf_threshold : 0.85
+class_threshold : 0.4
+iou_threshold : 0.4
+
+initial_state_x_d : 1
+initial_state_y_d : 1
+initial_state_x_dd : 0.1
+initial_state_y_dd : 0.1
+initial_state_yaw_rate : 0
+
+initial_pose_error_std : 1
+initial_state_error_std : 5
+
+system_noise_a_std : 1
+system_noise_yaw_std : 1

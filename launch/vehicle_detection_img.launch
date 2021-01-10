@@ -1,0 +1,4 @@
+<launch>
+  <node pkg="vehicle_detection" name="vehicle_detection_img" type="vehicle_detection_img" output="screen"/>
+  <rosparam file="$(find vehicle_detection)/vehicle_detection.yaml" />
+</launch>
