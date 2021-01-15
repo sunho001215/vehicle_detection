@@ -1,8 +1,8 @@
 img_path : "/home/sunho/vehicle_detection/CarMaker_data/backup_0109/images/000726.png"
 
-conf_threshold : 0.85
+conf_threshold : 0.8
 class_threshold : 0.4
-iou_threshold : 0.4
+iou_threshold : 0.2
 
 initial_state_x_d : 1
 initial_state_y_d : 1

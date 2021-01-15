@@ -21,6 +21,10 @@
 #include <tf/LinearMath/Vector3.h>
 #include "geometry_msgs/Point32.h"
 
+#include "std_msgs/MultiArrayLayout.h"
+#include "std_msgs/MultiArrayDimension.h"
+#include "std_msgs/Float32MultiArray.h"
+
 using namespace message_filters;
 using namespace sensor_msgs;
 using namespace std; 
@@ -31,7 +35,8 @@ const double cm_per_pixel = 5.0;
 const double map_scale = 100.0/cm_per_pixel;
 const int map_height = 800;
 const int map_width = 800;
-const double pi = 3.14159265358979f;
+const int img_size = 800;
+const double pi = M_PI;
 const int img_cor_x = map_width/2;
 const int img_cor_y = map_scale * 10;
 
@@ -53,6 +58,7 @@ class DataSubscriber{
         tf::Quaternion id;
         int input_image_size;  
         float iou_threshold, conf_threshold, class_threshold;
+        ros::Publisher pub;
 
     public:
         DataSubscriber(){
@@ -62,12 +68,12 @@ class DataSubscriber{
             sync->registerCallback(boost::bind(&DataSubscriber::pc_callback, this, _1, _2));
 
             tf::Quaternion q_1;
-            tf::Vector3 v_1 = tf::Vector3(2.0, 0.8, 2.0);
-            q_1.setRPY(0,0,0);
+            tf::Vector3 v_1 = tf::Vector3(2.0, 0.0, 2.0);
+            q_1.setRPY(0,0,90.0*M_PI/180.0);
             lidar_tf_1 = tf::Transform(q_1,v_1);
 
             tf::Quaternion q_2;
-            tf::Vector3 v_2 = tf::Vector3(2.0, -0.8, 2.0);
+            tf::Vector3 v_2 = tf::Vector3(2.5, 0.0, 2.0);
             q_2.setRPY(0,0,0);
             lidar_tf_2 = tf::Transform(q_2,v_2);
 
@@ -79,6 +85,7 @@ class DataSubscriber{
             ros::param::get("/conf_threshold", conf_threshold);
             ros::param::get("/class_threshold", class_threshold);
 
+            pub = nh.advertise<std_msgs::Float32MultiArray>("/DL_result", 1);
         }
 
         void pc_callback(const PointCloud::ConstPtr& pc_msg1, const PointCloud::ConstPtr& pc_msg2);
@@ -97,19 +104,21 @@ void DataSubscriber::pc_callback(const PointCloud::ConstPtr& pc_msg1, const Poin
         tf::Transform m = lidar_tf_1 * tf::Transform(id, p);
         tf::Vector3 v = m.getOrigin();
         new_point = vector_to_point(v);
-
-        if ((new_point.x * map_scale + img_cor_y >= 0) && (new_point.x * map_scale + img_cor_y < map_height)){
-            if((new_point.y * map_scale + img_cor_x >= 0) && (new_point.y * map_scale + img_cor_x < map_width)){
-                int y = (map_height - 1) - static_cast<int>(new_point.x * map_scale + img_cor_y);
-                int x = (map_width - 1) - static_cast<int>(new_point.y * map_scale + img_cor_x);
-                if (BEV_map.at<cv::Vec3f>(y,x)[2] == 0.0){
-                    BEV_map.at<cv::Vec3f>(y,x)[2] = 1.0;
-                }
-                if (BEV_map.at<cv::Vec3f>(y,x)[0] < new_point.z){
-                    BEV_map.at<cv::Vec3f>(y,x)[0] = new_point.z;
-                }
-                if (new_point.z < z_min){
-                    z_min = new_point.z;
+        if (!((new_point.x >= 0) && (new_point.x <= 4.5) && (new_point.y >= -1) && (new_point.y <= 1)))
+        {
+            if ((new_point.x * map_scale + img_cor_y >= 0) && (new_point.x * map_scale + img_cor_y < map_height)){
+                if((new_point.y * map_scale + img_cor_x >= 0) && (new_point.y * map_scale + img_cor_x < map_width)){
+                    int y = (map_height - 1) - static_cast<int>(new_point.x * map_scale + img_cor_y);
+                    int x = (map_width - 1) - static_cast<int>(new_point.y * map_scale + img_cor_x);
+                    if (BEV_map.at<cv::Vec3f>(y,x)[2] == 0.0){
+                        BEV_map.at<cv::Vec3f>(y,x)[2] = 1.0;
+                    }
+                    if (BEV_map.at<cv::Vec3f>(y,x)[0] < new_point.z){
+                        BEV_map.at<cv::Vec3f>(y,x)[0] = new_point.z;
+                    }
+                    if (new_point.z < z_min){
+                        z_min = new_point.z;
+                    }
                 }
             }
         }
@@ -122,18 +131,21 @@ void DataSubscriber::pc_callback(const PointCloud::ConstPtr& pc_msg1, const Poin
         tf::Vector3 v = m.getOrigin();
         new_point = vector_to_point(v);
 
-        if ((new_point.x * map_scale + img_cor_y >= 0) && (new_point.x * map_scale + img_cor_y < map_height)){
-            if((new_point.y * map_scale + img_cor_x >= 0) && (new_point.y * map_scale + img_cor_x < map_width)){
-                int y = (map_height - 1) - static_cast<int>(new_point.x * map_scale + img_cor_y);
-                int x = (map_width - 1) - static_cast<int>(new_point.y * map_scale + img_cor_x);
-                if (BEV_map.at<cv::Vec3f>(y,x)[2] == 0.0){
-                    BEV_map.at<cv::Vec3f>(y,x)[2] = 1.0;
-                }
-                if (BEV_map.at<cv::Vec3f>(y,x)[0] < new_point.z){
-                    BEV_map.at<cv::Vec3f>(y,x)[0] = new_point.z;
-                }
-                if (new_point.z < z_min){
-                    z_min = new_point.z;
+        if (!((new_point.x >= 0) && (new_point.x <= 4.5) && (new_point.y >= -1) && (new_point.y <= 1)))
+        {
+            if ((new_point.x * map_scale + img_cor_y >= 0) && (new_point.x * map_scale + img_cor_y < map_height)){
+                if((new_point.y * map_scale + img_cor_x >= 0) && (new_point.y * map_scale + img_cor_x < map_width)){
+                    int y = (map_height - 1) - static_cast<int>(new_point.x * map_scale + img_cor_y);
+                    int x = (map_width - 1) - static_cast<int>(new_point.y * map_scale + img_cor_x);
+                    if (BEV_map.at<cv::Vec3f>(y,x)[2] == 0.0){
+                        BEV_map.at<cv::Vec3f>(y,x)[2] = 1.0;
+                    }
+                    if (BEV_map.at<cv::Vec3f>(y,x)[0] < new_point.z){
+                        BEV_map.at<cv::Vec3f>(y,x)[0] = new_point.z;
+                    }
+                    if (new_point.z < z_min){
+                        z_min = new_point.z;
+                    }
                 }
             }
         }
@@ -151,6 +163,8 @@ void DataSubscriber::pc_callback(const PointCloud::ConstPtr& pc_msg1, const Poin
             }
         }
     }
+
+    //cv::imshow("BEV_map", BEV_map);
 
     cv::Mat resized_image;
 
@@ -172,30 +186,68 @@ void DataSubscriber::pc_callback(const PointCloud::ConstPtr& pc_msg1, const Poin
     result = non_maximum_suppresion(output_arr, arr_size, conf_threshold, iou_threshold, class_threshold);
 
     int result_size = result.size();
-    std::cout << "Number of Object : " << result_size << std::endl;
+    //std::cout << "Number of Object : " << result_size << std::endl;
     for(int i=0; i<result_size; i++)
     {
-        std::cout << result[i][5] << std::endl;
         DrawRotatedRectangle(resized_image, Point2f(result[i][1], result[i][2]), Size2f(result[i][4], result[i][3]), -result[i][5]*360/pi);
     }
 
-    auto end = std::chrono::high_resolution_clock::now();
-
-    auto duration = duration_cast<milliseconds>(end - start); 
-
-    // It should be known that it takes longer time at first time
-    std::cout << "inference taken : " << duration.count() << " ms" << endl; 
-
     cv::imshow("img", resized_image);
     cv::waitKey(1);
+
+    std_msgs::Float32MultiArray msg;
+    // class, y, x, h, w, rad
+
+    msg.layout.dim.push_back(std_msgs::MultiArrayDimension());
+    msg.layout.dim[0].label = "data";
+    msg.layout.dim[0].size = result.size() * 6;
+    msg.layout.dim[0].stride = 1;
+    msg.layout.data_offset = 0;
+   
+    std::vector<float> vec(result.size() * 6, 0);
+    
+    float resize_factor = static_cast<float>(img_size) / static_cast<float>(input_image_size);
+
+    for (int i=0; i<result.size(); i++){
+        for (int j=0; j<6; j++){
+            if (j == 1){
+                vec[i*6 + j] = cm_per_pixel * resize_factor *  (static_cast<float>(img_cor_x / resize_factor) - result[i][j]) / 100.0;
+            }
+            else if (j == 2){
+                vec[i*6 + j] = cm_per_pixel * resize_factor *  (input_image_size - img_cor_y / resize_factor - result[i][j]) / 100.0;
+            }
+            else if (j == 3 || j == 4){
+                vec[i*6 + j] = cm_per_pixel * resize_factor * result[i][j] / 100.0;
+            }
+            else if (j == 5){
+                float temp_rad = result[i][j] - M_PI_2;
+                if(temp_rad < -M_PI){
+                    temp_rad += 2 * M_PI;
+                }
+                vec[i*6 + j] = temp_rad;
+            }
+            else{
+                vec[i*6 + j] = result[i][j];
+            }
+        }
+    }       
+    
+    msg.data = vec;
+
+    pub.publish(msg);
 
     result.clear();
     vector<vector<float>>(result).swap(result);
     
     BEV_map.release();
-    resized_image.release();
+    //resized_image.release();
 
-    //new_points.clear();
+    auto end = std::chrono::high_resolution_clock::now();
+
+    auto duration = duration_cast<milliseconds>(end - start); 
+
+    std::cout << "inference taken : " << duration.count() << " ms" << endl; 
+
 }
 
 geometry_msgs::Point32 DataSubscriber::vector_to_point(tf::Vector3 v){

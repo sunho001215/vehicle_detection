@@ -46,28 +46,36 @@ include_directories(
 )
 include_directories(include)
 
-set (SOURCES
+set (DL_SOURCES
  src/Darknet.cpp
  src/Visualize.cpp
  src/NMS.cpp
- src/tracking_object.cpp
 )
 
-set (HEADERS
+set (DL_HEADERS
  include/Darknet.h
  include/Visualize.h
  include/NMS.h
+)
+
+set (TR_SOURCES
+ src/Visualize.cpp
+ src/tracking_object.cpp
+)
+
+set (TR_HEADERS
+ include/Visualize.h
  include/tracking_object.h
 )
 
-add_executable(vehicle_detection_img src/ImgDetection.cpp ${HEADERS} ${SOURCES})
+add_executable(vehicle_detection_img src/ImgDetection.cpp ${DL_HEADERS} ${DL_SOURCES})
 add_dependencies(vehicle_detection_img ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(vehicle_detection_img ${OpenCV_LIBS} ${catkin_LIBRARIES}  ${TORCH_LIBRARIES})
 
-add_executable(vehicle_detection_pc src/PCDetection.cpp ${HEADERS} ${SOURCES})
+add_executable(vehicle_detection_pc src/PCDetection.cpp ${DL_HEADERS} ${DL_SOURCES})
 add_dependencies(vehicle_detection_pc ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(vehicle_detection_pc ${OpenCV_LIBS} ${catkin_LIBRARIES}  ${TORCH_LIBRARIES})
 
-add_executable(vehicle_tracker src/tracker.cpp ${HEADERS} ${SOURCES})
+add_executable(vehicle_tracker src/tracker.cpp ${TR_HEADERS} ${TR_SOURCES})
 add_dependencies(vehicle_tracker ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(vehicle_tracker ${OpenCV_LIBS} ${catkin_LIBRARIES} Eigen3::Eigen ${TORCH_LIBRARIES})
