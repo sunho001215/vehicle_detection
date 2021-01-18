@@ -21,9 +21,7 @@
 #include <tf/LinearMath/Vector3.h>
 #include "geometry_msgs/Point32.h"
 
-#include "std_msgs/MultiArrayLayout.h"
-#include "std_msgs/MultiArrayDimension.h"
-#include "std_msgs/Float32MultiArray.h"
+#include "vehicle_detection/tracker_input.h"
 
 using namespace message_filters;
 using namespace sensor_msgs;
@@ -85,7 +83,7 @@ class DataSubscriber{
             ros::param::get("/conf_threshold", conf_threshold);
             ros::param::get("/class_threshold", class_threshold);
 
-            pub = nh.advertise<std_msgs::Float32MultiArray>("/DL_result", 1);
+            pub = nh.advertise<vehicle_detection::tracker_input>("/DL_result", 1);
         }
 
         void pc_callback(const PointCloud::ConstPtr& pc_msg1, const PointCloud::ConstPtr& pc_msg2);
@@ -195,14 +193,10 @@ void DataSubscriber::pc_callback(const PointCloud::ConstPtr& pc_msg1, const Poin
     cv::imshow("img", resized_image);
     cv::waitKey(1);
 
-    std_msgs::Float32MultiArray msg;
+    vehicle_detection::tracker_input msg;
     // class, y, x, h, w, rad
-
-    msg.layout.dim.push_back(std_msgs::MultiArrayDimension());
-    msg.layout.dim[0].label = "data";
-    msg.layout.dim[0].size = result.size() * 6;
-    msg.layout.dim[0].stride = 1;
-    msg.layout.data_offset = 0;
+    msg.size = result.size() * 6;
+    msg.header = pc_msg1->header;
    
     std::vector<float> vec(result.size() * 6, 0);
     

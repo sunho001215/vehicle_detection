@@ -1,6 +1,6 @@
 #include "tracking_object.h"
 
-TrackingObject::TrackingObject(double x, double y, double yaw)
+TrackingObject::TrackingObject(double x, double y, double yaw, int obj_class, double w, double h)
 {
     double initial_state_x_d, initial_state_y_d, initial_state_x_dd, initial_state_y_dd;
     double initial_state_yaw_rate;
@@ -10,6 +10,8 @@ TrackingObject::TrackingObject(double x, double y, double yaw)
     ros::param::get("/initial_state_x_dd", initial_state_x_dd);
     ros::param::get("/initial_state_y_dd", initial_state_y_dd);
     ros::param::get("/initial_state_yaw_rate", initial_state_yaw_rate);
+
+    //std::cout << x << " " << y << " " << yaw << std::endl;
 
     st_k(0,0) = x;
     st_k(1,0) = y;
@@ -43,6 +45,12 @@ TrackingObject::TrackingObject(double x, double y, double yaw)
     H(0,0) = 1;
     H(1,1) = 1;
     H(2,6) = 1;
+
+    this->obj_class = obj_class;
+    this->w = w;
+    this->h = h;
+
+    count = 0;
 }
 
 void TrackingObject::calc_st_pred(double delta_t)
@@ -57,6 +65,11 @@ void TrackingObject::calc_st_pred(double delta_t)
     F(6,7) = delta_t;
 
     st_k1_k = F*st_k;
+}
+
+void TrackingObject::sub_st_pred_to_st()
+{
+    st_k = st_k1_k;
 }
 
 void TrackingObject::calc_P_k1_k(double delta_t)
@@ -123,4 +136,13 @@ void TrackingObject::calc_P()
     Matrix<double, _st_DIM, _st_DIM> P_temp;
     P_temp = P_k1_k - K * H * P_k1_k;
     P_k = P_temp;
+}
+
+vector<double> TrackingObject::return_st_pred()
+{
+    vector<double> vec_st;
+    vec_st.push_back(st_k1_k(0,0));
+    vec_st.push_back(st_k1_k(1,0));
+
+    return vec_st;
 }

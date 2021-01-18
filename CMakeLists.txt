@@ -20,6 +20,7 @@ find_package(catkin REQUIRED COMPONENTS
   message_filters
   std_msgs
   geometry_msgs
+  nav_msgs
   tf
   tf2
 )
@@ -27,6 +28,11 @@ find_package(catkin REQUIRED COMPONENTS
 find_package(OpenCV 3 REQUIRED)
 find_package(Torch REQUIRED)
 find_package(Eigen3 REQUIRED)
+
+add_message_files(
+  FILES 
+  tracker_input.msg
+)
 
 generate_messages(DEPENDENCIES std_msgs geometry_msgs sensor_msgs)
 
