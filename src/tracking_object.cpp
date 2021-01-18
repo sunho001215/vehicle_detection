@@ -1,6 +1,6 @@
 #include "tracking_object.h"
 
-TrackingObject::TrackingObject(double x, double y, double yaw, int obj_class, double w, double h)
+TrackingObject::TrackingObject(double x, double y, double yaw, int obj_class, double w, double h, int obj_num)
 {
     double initial_state_x_d, initial_state_y_d, initial_state_x_dd, initial_state_y_dd;
     double initial_state_yaw_rate;
@@ -49,6 +49,7 @@ TrackingObject::TrackingObject(double x, double y, double yaw, int obj_class, do
     this->obj_class = obj_class;
     this->w = w;
     this->h = h;
+    this->obj_num = obj_num;
 
     count = 0;
 }
@@ -145,4 +146,19 @@ vector<double> TrackingObject::return_st_pred()
     vec_st.push_back(st_k1_k(1,0));
 
     return vec_st;
+}
+
+vector<double> TrackingObject::return_st_for_msg()
+{
+    vector<double> output;
+    output.push_back(st_k(0,0));
+    output.push_back(st_k(1,0));
+    output.push_back(st_k(2,0));
+    output.push_back(st_k(3,0));
+    output.push_back(st_k(4,0));
+    output.push_back(st_k(5,0));
+    output.push_back(st_k(6,0));
+    output.push_back(st_k(7,0));
+
+    return output;
 }

@@ -20,6 +20,8 @@
 #include "geometry_msgs/Point32.h"
 
 #include "vehicle_detection/tracker_input.h"
+#include "vehicle_detection/tracker_output.h"
+#include "vehicle_detection/tracking_object.h"
 
 using namespace std;
 
@@ -92,9 +94,11 @@ class Tracker{
         ros::NodeHandle nh;
         ros::Subscriber tracker_input_sub;
         ros::Subscriber Odometry_sub;
+        ros::Publisher pub;
         CarState car_state;
         double prev_time;
         bool is_first, car_state_init;
+        int obj_num;
 
     public:
         Tracker();
@@ -105,6 +109,7 @@ class Tracker{
 Tracker::Tracker(){
     tracker_input_sub = nh.subscribe("/DL_result", 1, &Tracker::tracker_input_callback, this);
     Odometry_sub = nh.subscribe("/Odometry", 1, &Tracker::Odometry_callback, this);
+    pub = nh.advertise<vehicle_detection::tracker_output>("/tracker_output", 1);
     
     car_state.pose.x = 0;
     car_state.pose.y = 0;
@@ -117,6 +122,7 @@ Tracker::Tracker(){
     prev_time = 0;
     is_first = true;
     car_state_init = false;
+    obj_num = 0;
 }
 
 void Tracker::Odometry_callback(const nav_msgs::Odometry::ConstPtr& msg){
@@ -173,7 +179,7 @@ void Tracker::tracker_input_callback(const vehicle_detection::tracker_input::Con
 
         if(is_first && (input_num != 0)){
             for(int i=0; i<input_num; i++){
-                TrackingObject tmp(detected_objs[i][0], detected_objs[i][1], detected_objs[i][2], static_cast<int>(detected_objs[i][3]), detected_objs[i][4], detected_objs[i][5]);
+                TrackingObject tmp(detected_objs[i][0], detected_objs[i][1], detected_objs[i][2], static_cast<int>(detected_objs[i][3]), detected_objs[i][4], detected_objs[i][5], obj_num++);
                 tracking_objects.push_back(tmp);
             }
             is_first = false;
@@ -313,7 +319,7 @@ void Tracker::tracker_input_callback(const vehicle_detection::tracker_input::Con
 
             for(int i=0; i<input_num; i++){
                 if(input_check[i] == 0){
-                    TrackingObject tmp(detected_objs[i][0], detected_objs[i][1], detected_objs[i][2], static_cast<int>(detected_objs[i][3]), detected_objs[i][4], detected_objs[i][5]);
+                    TrackingObject tmp(detected_objs[i][0], detected_objs[i][1], detected_objs[i][2], static_cast<int>(detected_objs[i][3]), detected_objs[i][4], detected_objs[i][5], obj_num++);
                     tracking_objects.push_back(tmp);
                 }
             }
@@ -322,11 +328,28 @@ void Tracker::tracker_input_callback(const vehicle_detection::tracker_input::Con
             delete[] input_check;
         }
 
-        std::cout <<"Number of tracking objects : " << tracking_objects.size() <<std::endl;
+        vehicle_detection::tracker_output msg_out;
+        msg_out.header = msg->header;
+
         for(int i=0; i<tracking_objects.size(); i++){
-            vector<double> vis = tracking_objects[i].return_st_pred();
-            std::cout << vis[0] << " " << vis[1] << std::endl;
+            vector<double> output = tracking_objects[i].return_st_for_msg();
+            vehicle_detection::tracking_object tmp;
+            tmp.obj_num = tracking_objects[i].obj_num;
+            tmp.obj_class = tracking_objects[i].obj_class;
+            tmp.x = output[0];
+            tmp.y = output[1];
+            tmp.x_d = output[2];
+            tmp.y_d = output[3];
+            tmp.x_dd = output[4];
+            tmp.y_dd = output[5];
+            tmp.yaw = output[6];
+            tmp.yaw_rate = output[7];
+            tmp.w = tracking_objects[i].w;
+            tmp.h = tracking_objects[i].h;
+            msg_out.data.push_back(tmp);
         }
+
+        pub.publish(msg_out);
     }
 }
 

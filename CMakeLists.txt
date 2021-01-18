@@ -32,6 +32,8 @@ find_package(Eigen3 REQUIRED)
 add_message_files(
   FILES 
   tracker_input.msg
+  tracking_object.msg
+  tracker_output.msg
 )
 
 generate_messages(DEPENDENCIES std_msgs geometry_msgs sensor_msgs)

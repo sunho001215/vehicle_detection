@@ -22,12 +22,11 @@ class TrackingObject{
         Matrix<double, _Z_DIM, _Z_DIM> S;
         Matrix<double, _Z_DIM, _Z_DIM> R;
         Matrix<double, _st_DIM, _Z_DIM> K;
-        int obj_class;
-        double w, h;
 
     public:
-        int count;
-        TrackingObject(double x, double y, double yaw, int obj_class, double w, double h);
+        int count, obj_num, obj_class;
+        double w, h;
+        TrackingObject(double x, double y, double yaw, int obj_class, double w, double h, int obj_num);
         void calc_st_pred(double delta_t);
         void calc_P_k1_k(double delta_t);
         void calc_kalman_gain();
@@ -35,4 +34,5 @@ class TrackingObject{
         void calc_P();
         void sub_st_pred_to_st();
         vector<double> return_st_pred();
+        vector<double> return_st_for_msg();
 };
