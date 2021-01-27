@@ -2,8 +2,13 @@
 #include <iostream>
 #include <chrono>
 #include <time.h>
+
+#include "Eigen/Core"
+#include "Eigen/Geometry"
+
 #include <opencv2/opencv.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
+#include <opencv2/core/eigen.hpp>
 #include "ros/ros.h"
 #include "ros/package.h"
 
@@ -15,19 +20,27 @@
 #include <message_filters/subscriber.h>
 #include <message_filters/time_synchronizer.h>
 #include <message_filters/sync_policies/exact_time.h>
+#include <message_filters/sync_policies/approximate_time.h>
 
 #include <tf/LinearMath/Quaternion.h>
 #include <tf/LinearMath/Transform.h>
 #include <tf/LinearMath/Vector3.h>
 #include "geometry_msgs/Point32.h"
+#include "tf_conversions/tf_eigen.h"
 
 #include "vehicle_detection/tracker_input.h"
+
+#include <sensor_msgs/Image.h>
+#include <image_transport/image_transport.h>
+#include <cv_bridge/cv_bridge.h>
+#include <sensor_msgs/image_encodings.h>
 
 using namespace message_filters;
 using namespace sensor_msgs;
 using namespace std; 
 using namespace std::chrono; 
 using namespace cv;
+using namespace Eigen;
 
 const double cm_per_pixel = 5.0;
 const double map_scale = 100.0/cm_per_pixel;
@@ -43,12 +56,61 @@ torch::DeviceType device_type = torch::kCUDA;
 torch::Device device(device_type);
 Darknet net(net_path.c_str(), &device);
 
+cv::Mat calc_homography(double x, double y, double z, double R, double P, double Y)
+{
+    cv::Mat homography;
+
+    tf::Quaternion cam_q, VToCam;
+    tf::Quaternion car_to_cam_q;
+    tf::Transform car_to_cam_tf, final_tf, cam_tf;
+    
+    Eigen::Affine3d cam_affine;
+
+    Matrix<double, 3, 4> mat_3x4;
+    Matrix<double, 3, 3> vehicle_to_cam;
+    Matrix<double, 3, 3> homo;
+    Matrix<double, 3, 4> P_matrix;
+
+    Matrix<double, 3, 3> dist_to_img;
+
+    tf::Vector3 cam_v = tf::Vector3(0, 0, 0);
+    cam_q.setRPY(-90.0*M_PI/180.0, 0, -90.0*M_PI/180.0);
+    cam_tf = tf::Transform(cam_q, cam_v);
+    
+    P_matrix(0,0) = 346.43486958; P_matrix(0,1) = 0.0; P_matrix(0,2) = 600.0; P_matrix(0,3) = 0.0;
+    P_matrix(1,0) = 0.0; P_matrix(1,1) = 346.43486958; P_matrix(1,2) = 400.0; P_matrix(1,3) = 0.0;
+    P_matrix(2,0) = 0.0; P_matrix(2,1) = 0.0; P_matrix(2,2) = 1.0; P_matrix(2,3) = 0.0;
+    
+    dist_to_img.setZero();
+    dist_to_img(0,1) = -map_scale; dist_to_img(0,2) = 20 * map_scale;
+    dist_to_img(1,0) = -map_scale; dist_to_img(1,2) = 30 * map_scale;
+    dist_to_img(2,2) = 1;
+    
+    tf::Vector3 car_to_cam_v = tf::Vector3(x, y, z);
+    car_to_cam_q.setRPY(R*M_PI/180.0, P*M_PI/180.0, Y*M_PI/180.0);
+    car_to_cam_tf = tf::Transform(car_to_cam_q, car_to_cam_v);
+    final_tf = car_to_cam_tf * cam_tf;
+    tf::transformTFToEigen(final_tf.inverse(), cam_affine);
+    mat_3x4 = P_matrix * cam_affine.matrix();
+
+    vehicle_to_cam(0,0) = mat_3x4(0,0); vehicle_to_cam(0,1) = mat_3x4(0,1); vehicle_to_cam(0,2) = mat_3x4(0,3);
+    vehicle_to_cam(1,0) = mat_3x4(1,0); vehicle_to_cam(1,1) = mat_3x4(1,1); vehicle_to_cam(1,2) = mat_3x4(1,3);
+    vehicle_to_cam(2,0) = mat_3x4(2,0); vehicle_to_cam(2,1) = mat_3x4(2,1); vehicle_to_cam(2,2) = mat_3x4(2,3);
+    
+    homo = dist_to_img * vehicle_to_cam.inverse();
+    cv::eigen2cv(homo,homography);
+            
+    return homography;
+}
 class DataSubscriber{
     private:
         ros::NodeHandle nh;
         message_filters::Subscriber<sensor_msgs::PointCloud> pc_sub1;
         message_filters::Subscriber<sensor_msgs::PointCloud> pc_sub2;
-        typedef sync_policies::ExactTime<sensor_msgs::PointCloud, sensor_msgs::PointCloud> SyncPolicy;
+        message_filters::Subscriber<sensor_msgs::Image> img_1;
+        message_filters::Subscriber<sensor_msgs::Image> img_2;
+        message_filters::Subscriber<sensor_msgs::Image> img_3;
+        typedef sync_policies::ApproximateTime<PointCloud, PointCloud, Image, Image, Image> SyncPolicy;
         typedef Synchronizer<SyncPolicy> Sync;
         boost::shared_ptr<Sync> sync;
         tf::Transform lidar_tf_1;
@@ -57,13 +119,18 @@ class DataSubscriber{
         int input_image_size;  
         float iou_threshold, conf_threshold, class_threshold;
         ros::Publisher pub;
+        cv::Mat homography_front, homography_right, homography_left;
+        cv::Mat front_mask, right_mask, left_mask;
 
     public:
         DataSubscriber(){
-            pc_sub1.subscribe(nh, "/pointcloud/vlp", 1);
-            pc_sub2.subscribe(nh, "/pointcloud/os1", 1);
-            sync.reset(new Sync(SyncPolicy(1), pc_sub1, pc_sub2));
-            sync->registerCallback(boost::bind(&DataSubscriber::pc_callback, this, _1, _2));
+            pc_sub1.subscribe(nh, "/pointcloud/vlp", 3);
+            pc_sub2.subscribe(nh, "/pointcloud/os1", 3);
+            img_1.subscribe(nh, "/color1/image_raw", 3);
+            img_2.subscribe(nh, "/color2/image_raw", 3);
+            img_3.subscribe(nh, "/color3/image_raw", 3);
+            sync.reset(new Sync(SyncPolicy(3), pc_sub1, pc_sub2, img_1, img_2, img_3));
+            sync->registerCallback(boost::bind(&DataSubscriber::callback, this, _1, _2, _3, _4, _5));
 
             tf::Quaternion q_1;
             tf::Vector3 v_1 = tf::Vector3(2.0, 0.0, 2.0);
@@ -84,15 +151,29 @@ class DataSubscriber{
             ros::param::get("/class_threshold", class_threshold);
 
             pub = nh.advertise<vehicle_detection::tracker_input>("/DL_result", 1);
+
+            homography_right = calc_homography(2.1,-0.7, 2.6, 0, 25.0, -100.0);
+            homography_front = calc_homography(2.3, 0.0, 2.6, 0, -15.0, 0);
+            homography_left = calc_homography(2.1, 0.7, 2.6, 0, 25.0, 100.0);
+
+            stringstream front_mask_path, right_mask_path, left_mask_path;
+            front_mask_path << ros::package::getPath("hmg_data_collector") << "/mask_img/front_mask.png";
+            right_mask_path << ros::package::getPath("hmg_data_collector") << "/mask_img/right_mask.png";
+            left_mask_path << ros::package::getPath("hmg_data_collector") << "/mask_img/left_mask.png";
+
+            front_mask = cv::imread(front_mask_path.str(), 0);
+            right_mask = cv::imread(right_mask_path.str(), 0);
+            left_mask = cv::imread(left_mask_path.str(), 0);
         }
 
-        void pc_callback(const PointCloud::ConstPtr& pc_msg1, const PointCloud::ConstPtr& pc_msg2);
+        void callback(const PointCloud::ConstPtr& pc_msg1, const PointCloud::ConstPtr& pc_msg2, const Image::ConstPtr& img_msg1, const Image::ConstPtr& img_msg2, const Image::ConstPtr& img_msg3);
         geometry_msgs::Point32 vector_to_point(tf::Vector3 v);
 };
 
-void DataSubscriber::pc_callback(const PointCloud::ConstPtr& pc_msg1, const PointCloud::ConstPtr& pc_msg2){
+void DataSubscriber::callback(const PointCloud::ConstPtr& pc_msg1, const PointCloud::ConstPtr& pc_msg2, const Image::ConstPtr& img_msg1, const Image::ConstPtr& img_msg2, const Image::ConstPtr& img_msg3){
     auto start = std::chrono::high_resolution_clock::now();
 
+    // Point Cloud Data
     Mat BEV_map(map_height, map_width, CV_32FC3, Scalar(0.0, 0.0, 0.0));
     double z_min = 98765432.0;
 
@@ -164,27 +245,57 @@ void DataSubscriber::pc_callback(const PointCloud::ConstPtr& pc_msg1, const Poin
 
     //cv::imshow("BEV_map", BEV_map);
 
-    cv::Mat resized_image;
+    // Camera Data
+    cv::Mat Image_BEV_map(map_height, map_width, CV_32FC3, Scalar(0.0, 0.0, 0.0));
+    cv::Mat Camera_BEV_left(map_height, map_width, CV_32FC3, Scalar(0.0, 0.0, 0.0));
+    cv::Mat Camera_BEV_front(map_height, map_width, CV_32FC3, Scalar(0.0, 0.0, 0.0));
+    cv::Mat Camera_BEV_right(map_height, map_width, CV_32FC3, Scalar(0.0, 0.0, 0.0));
 
-    cv::cvtColor(BEV_map, resized_image,  cv::COLOR_BGR2RGB);
+    cv_bridge::CvImagePtr cv_ptr;
+    cv_ptr = cv_bridge::toCvCopy(img_msg1, sensor_msgs::image_encodings::BGR8);
+    cv::warpPerspective(cv_ptr->image,Camera_BEV_front,homography_front, cv::Size(map_height, map_width));
+    
+    cv_ptr = cv_bridge::toCvCopy(img_msg2, sensor_msgs::image_encodings::BGR8);
+    cv::warpPerspective(cv_ptr->image,Camera_BEV_right,homography_right, cv::Size(map_height, map_width));
+    
+    cv_ptr = cv_bridge::toCvCopy(img_msg3, sensor_msgs::image_encodings::BGR8);
+    cv::warpPerspective(cv_ptr->image,Camera_BEV_left,homography_left, cv::Size(map_height, map_width));
+
+    Camera_BEV_right.copyTo(Image_BEV_map, right_mask);
+    Camera_BEV_left.copyTo(Image_BEV_map, left_mask);
+    Camera_BEV_front.copyTo(Image_BEV_map, front_mask);
+
+    //imshow("Image_BEV_map", Image_BEV_map);
+    
+    // Architecture Start
+    cv::Mat resized_image, Camera_resized_image;
+
+    cv::cvtColor(BEV_map, resized_image, cv::COLOR_BGR2RGB);
     cv::resize(resized_image, resized_image, cv::Size(input_image_size, input_image_size));
 
+    cv::cvtColor(Image_BEV_map, Camera_resized_image, cv::COLOR_BGR2RGB);
+    cv::resize(Camera_resized_image, Camera_resized_image, cv::Size(input_image_size, input_image_size));
+    
+    cv::Mat camera_float;
+    Camera_resized_image.convertTo(camera_float, CV_32FC3, 1.0/255.0);
+
     auto img_tensor = torch::from_blob(resized_image.data, {1, input_image_size, input_image_size, 3}).to(device);
-    img_tensor = img_tensor.permute({0,3,1,2});
-       
-    auto output = net.forward(img_tensor).to(torch::kCPU);
+    auto camera_tensor = torch::from_blob(camera_float.data, {1, input_image_size, input_image_size, 3}).to(device);
+
+    auto input_tensor = torch::cat({img_tensor, camera_tensor}, 3);
+    input_tensor = input_tensor.permute({0,3,1,2});
+
+    auto output = net.forward(input_tensor).to(torch::kCPU);
     
     // filter result by NMS
 
     int arr_size = output.sizes()[1];
-    //std::cout << arr_size << std::endl;
     float* output_arr = output.data_ptr<float>();
 
     vector<vector<float>> result;
     result = non_maximum_suppresion(output_arr, arr_size, conf_threshold, iou_threshold, class_threshold);
 
     int result_size = result.size();
-    //std::cout << "Number of Object : " << result_size << std::endl;
     for(int i=0; i<result_size; i++)
     {
         DrawRotatedRectangle(resized_image, Point2f(result[i][1], result[i][2]), Size2f(result[i][4], result[i][3]), -result[i][5]*360/pi);
@@ -194,6 +305,7 @@ void DataSubscriber::pc_callback(const PointCloud::ConstPtr& pc_msg1, const Poin
     cv::waitKey(1);
 
     vehicle_detection::tracker_input msg;
+
     // class, y, x, h, w, rad
     msg.size = result.size() * 6;
     msg.header = pc_msg1->header;

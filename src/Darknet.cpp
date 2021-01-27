@@ -345,7 +345,7 @@ void Darknet::load_cfg(const char *cfg_file)
 
 void Darknet::create_modules()
 {
-	int prev_filters = 3;
+	int prev_filters = 6;
 
 	std::vector<int> output_filters;
 

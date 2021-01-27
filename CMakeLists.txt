@@ -20,6 +20,8 @@ find_package(catkin REQUIRED COMPONENTS
   message_filters
   std_msgs
   geometry_msgs
+  tf_conversions
+  cv_bridge
   nav_msgs
   tf
   tf2
