@@ -4,9 +4,13 @@
 #include "tracking_object.h"
 #include <cmath>
 #include <cstdio>
+#include <cassert>
 #include <vector>
 #include <algorithm>
 #include <queue>
+
+#include <chrono>
+#include <time.h>
 
 #include "std_msgs/MultiArrayLayout.h"
 #include "std_msgs/MultiArrayDimension.h"
@@ -24,6 +28,7 @@
 #include "vehicle_detection/tracking_object.h"
 
 using namespace std;
+using namespace std::chrono;
 
 const int MAX_V = 100;
 const int S = MAX_V - 2;
@@ -139,10 +144,19 @@ void Tracker::Odometry_callback(const nav_msgs::Odometry::ConstPtr& msg){
 
 void Tracker::tracker_input_callback(const vehicle_detection::tracker_input::ConstPtr& msg)
 {
+    auto start = std::chrono::high_resolution_clock::now();
+
     int input_num = static_cast<int>((msg->size)/6);
     int tracking_objs_num = tracking_objects.size();
     double delta_t = msg->header.stamp.sec + (msg->header.stamp.nsec/1.0e9) - prev_time;
     prev_time = msg->header.stamp.sec + msg->header.stamp.nsec/1.0e9;
+
+    assert(input_num >= 0 && input_num < WORK);
+    assert(tracking_objs_num >= 0 && tracking_objs_num < MAX_V - WORK - 2);
+
+    if(tracking_objs_num == 0){
+        is_first = true;
+    }
 
     if(car_state_init){
         tf::Transform car_tf;
@@ -184,8 +198,9 @@ void Tracker::tracker_input_callback(const vehicle_detection::tracker_input::Con
             }
             is_first = false;
         }
-        else{
+        else if(!is_first && input_num != 0){
             vector<vector<double>> tracking_objs_st;
+            bool MCMF_check = false;
             tracking_objs_st.clear();
 
             for(int i=0; i<tracking_objs_num; i++){
@@ -195,9 +210,9 @@ void Tracker::tracker_input_callback(const vehicle_detection::tracker_input::Con
 
             // MCMF start
             vector<int> adj[MAX_V];
-            double c[MAX_V][MAX_V] = {0.,};
-            double f[MAX_V][MAX_V] = {0.,};
-            double d[MAX_V][MAX_V] = {0.,};
+            int c[MAX_V][MAX_V] = {0,};
+            int f[MAX_V][MAX_V] = {0,};
+            int d[MAX_V][MAX_V] = {0,};
 
             for(int i=0; i<input_num; i++){
                 c[S][i] = 1;
@@ -222,110 +237,138 @@ void Tracker::tracker_input_callback(const vehicle_detection::tracker_input::Con
                         adj[i].push_back(j + WORK);
                         adj[j + WORK].push_back(i);
 
-                        d[i][j + WORK] = cost;
-                        d[j + WORK][i] = -cost;
+                        d[i][j + WORK] = static_cast<int>(cost*100.0);
+                        d[j + WORK][i] = static_cast<int>(-cost*100.0);
 
                         c[i][j + WORK] = 1;
+                        MCMF_check = true;
                     }
                 }
             }
 
-            int *edge = new int[tracking_objs_num];
-            int *input_check = new int[input_num]();
+            if(MCMF_check){
+                int *edge = new int[tracking_objs_num];
+                int *input_check = new int[input_num]();
 
-            for(int i=0; i<tracking_objs_num; i++){
-                edge[i] = -1;
-            }
+                for(int i=0; i<tracking_objs_num; i++){
+                    edge[i] = -1;
+                }
 
-            while(1)
-            {
-                int prev[MAX_V], dist[MAX_V];
-                bool inQ[MAX_V] = {0};
-
-                queue<int> q;
-                fill(prev, prev + MAX_V, -1);
-                fill(dist, dist + MAX_V, INF);
-
-                dist[S] = 0;
-                inQ[S] = true;
-
-                q.push(S);
-
-                while(!q.empty())
+                while(1)
                 {
-                    int here = q.front();
-                    q.pop();
+                    int prev[MAX_V], dist[MAX_V];
+                    bool inQ[MAX_V] = {0};
 
-                    inQ[here] = false;
+                    queue<int> q;
+                    fill(prev, prev + MAX_V, -1);
+                    fill(dist, dist + MAX_V, INF);
 
-                    for(int i=0; i < adj[here].size(); i++)
+                    dist[S] = 0;
+                    inQ[S] = true;
+
+                    q.push(S);
+
+                    while(!q.empty())
                     {
-                        int next = adj[here][i];
-                        if (c[here][next] - f[here][next] > 0 && dist[next] > dist[here] + d[here][next])
+                        int here = q.front();
+                        q.pop();
+
+                        inQ[here] = false;
+
+                        for(int i=0; i < adj[here].size(); i++)
                         {
-                            dist[next] = dist[here] + d[here][next];
-                            prev[next] = here;
-                            if (!inQ[next])
+                            int next = adj[here][i];
+                            if (c[here][next] - f[here][next] > 0 && dist[next] > dist[here] + d[here][next])
                             {
-                                q.push(next);
-                                inQ[next] = true;
+                                dist[next] = dist[here] + d[here][next];
+                                prev[next] = here;
+                                if (!inQ[next])
+                                {
+                                    q.push(next);
+                                    inQ[next] = true;
+                                }
                             }
                         }
                     }
-                }
-
-                if (prev[T] == -1){
-                    break;
-                }
-
-                double flow = INF;
-                for (int i = T; i != S; i = prev[i]){
-                    flow = min(flow, c[prev[i]][i] - f[prev[i]][i]);
-                }
-        
-                for (int i = T; i != S; i = prev[i])
-                {
-                    f[prev[i]][i] += flow;
-                    f[i][prev[i]] -= flow;
-                }
-                
-                edge[prev[T] - WORK] = prev[prev[T]];
-                input_check[prev[prev[T]]] = 1;
-            }
-            //MCMF end
-            
-            for(int i=0; i<tracking_objs_num; i++){
-                if(edge[i] != -1){
-                    int idx = edge[i];
-                    tracking_objects[i].calc_P_k1_k(delta_t);
-                    tracking_objects[i].calc_kalman_gain();
-                    tracking_objects[i].calc_st(detected_objs[idx][0], detected_objs[idx][1], detected_objs[idx][2]);
-                    tracking_objects[i].calc_P();
-                    tracking_objects[i].count = 0;
-                }
-            }
-
-            for(int i=0; i<tracking_objs_num; i++){
-                if(edge[i] == -1){
-                    if(tracking_objects[i].count >= 10){
-                        tracking_objects.erase(tracking_objects.begin() + i);
+                    
+                    if (prev[T] == -1){
+                        break;
                     }
-                    else{
+
+                    int flow = INF;
+                    for (int i = T; i != S; i = prev[i]){
+                        flow = min(flow, c[prev[i]][i] - f[prev[i]][i]);
+                    }
+
+                    for (int i = T; i != S; i = prev[i])
+                    {
+                        f[prev[i]][i] += flow;
+                        f[i][prev[i]] -= flow;
+                    }
+                    
+                    edge[prev[T] - WORK] = prev[prev[T]];
+                    input_check[prev[prev[T]]] = 1;
+                }
+                //MCMF end
+            
+                for(int i=0; i<tracking_objs_num; i++){
+                    if(edge[i] != -1){
+                        int idx = edge[i];
+                        tracking_objects[i].calc_P_k1_k(delta_t);
+                        tracking_objects[i].calc_kalman_gain();
+                        tracking_objects[i].calc_st(detected_objs[idx][0], detected_objs[idx][1], detected_objs[idx][2]);
+                        tracking_objects[i].calc_P();
+                        tracking_objects[i].count = 0;
+                    }
+                }
+
+                for(int i=0; i<tracking_objs_num; i++){
+                    if(edge[i] == -1){
+                        // if(tracking_objects[i].count >= 10){
+                        //     tracking_objects.erase(tracking_objects.begin() + i);
+                        // }
+                        // else{
+                        //     tracking_objects[i].count++;
+                        //     tracking_objects[i].sub_st_pred_to_st();
+                        // }
                         tracking_objects[i].count++;
                         tracking_objects[i].sub_st_pred_to_st();
                     }
                 }
-            }
 
-            for(int i=0; i<input_num; i++){
-                if(input_check[i] == 0){
+                for(int i=0; i<input_num; i++){
+                    if(input_check[i] == 0){
+                        TrackingObject tmp(detected_objs[i][0], detected_objs[i][1], detected_objs[i][2], static_cast<int>(detected_objs[i][3]), detected_objs[i][4], detected_objs[i][5], obj_num++);
+                        tracking_objects.push_back(tmp);
+                    }
+                }
+
+                delete[] edge;
+                delete[] input_check;
+            }
+            else{
+                for(int i=0; i<tracking_objs_num; i++){
+                    tracking_objects[i].count++;
+                    tracking_objects[i].sub_st_pred_to_st();
+                }
+                for(int i=0; i<input_num; i++){
                     TrackingObject tmp(detected_objs[i][0], detected_objs[i][1], detected_objs[i][2], static_cast<int>(detected_objs[i][3]), detected_objs[i][4], detected_objs[i][5], obj_num++);
                     tracking_objects.push_back(tmp);
                 }
             }
+        }
+        else if(!is_first &&input_num == 0){
+            for(int i=0; i<tracking_objs_num; i++){
+                tracking_objects[i].count++;
+                tracking_objects[i].sub_st_pred_to_st();
+            }
+        }
 
-            delete[] edge;
-            delete[] input_check;
+        for(int i=0; i<tracking_objects.size(); i++){
+            if(tracking_objects[i].count >= 10){
+                tracking_objects.erase(tracking_objects.begin() + i);
+                i = 0;
+            }
         }
 
         vehicle_detection::tracker_output msg_out;
@@ -350,6 +393,12 @@ void Tracker::tracker_input_callback(const vehicle_detection::tracker_input::Con
         }
 
         pub.publish(msg_out);
+
+        auto end = std::chrono::high_resolution_clock::now();
+
+        auto duration = duration_cast<milliseconds>(end - start); 
+
+        std::cout << "inference taken : " << duration.count() << " ms" << endl; 
     }
 }
 

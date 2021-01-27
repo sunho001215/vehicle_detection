@@ -157,9 +157,9 @@ class DataSubscriber{
             homography_left = calc_homography(2.1, 0.7, 2.6, 0, 25.0, 100.0);
 
             stringstream front_mask_path, right_mask_path, left_mask_path;
-            front_mask_path << ros::package::getPath("hmg_data_collector") << "/mask_img/front_mask.png";
-            right_mask_path << ros::package::getPath("hmg_data_collector") << "/mask_img/right_mask.png";
-            left_mask_path << ros::package::getPath("hmg_data_collector") << "/mask_img/left_mask.png";
+            front_mask_path << ros::package::getPath("vehicle_detection") << "/mask_img/front_mask.png";
+            right_mask_path << ros::package::getPath("vehicle_detection") << "/mask_img/right_mask.png";
+            left_mask_path << ros::package::getPath("vehicle_detection") << "/mask_img/left_mask.png";
 
             front_mask = cv::imread(front_mask_path.str(), 0);
             right_mask = cv::imread(right_mask_path.str(), 0);
