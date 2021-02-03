@@ -21,6 +21,8 @@ TrackingObject::TrackingObject(double x, double y, double yaw, int obj_class, do
     st_k(5,0) = initial_state_y_dd;
     st_k(6,0) = yaw;
     st_k(7,0) = initial_state_yaw_rate;
+    st_k(8,0) = w;
+    st_k(9,0) = h;
 
     double initial_pose_error_std, initial_state_error_std;
     double pose_error_var, state_error_var;
@@ -40,15 +42,17 @@ TrackingObject::TrackingObject(double x, double y, double yaw, int obj_class, do
     P_k(5,5) = state_error_var;
     P_k(6,6) = pose_error_var;
     P_k(7,7) = state_error_var;
+    P_k(8,8) = pose_error_var;
+    P_k(9,9) = pose_error_var;
 
     H.setZero();
     H(0,0) = 1;
     H(1,1) = 1;
     H(2,6) = 1;
+    H(3,8) = 1;
+    H(4,9) = 1;
 
     this->obj_class = obj_class;
-    this->w = w;
-    this->h = h;
     this->obj_num = obj_num;
 
     count = 0;
@@ -110,6 +114,9 @@ void TrackingObject::calc_P_k1_k(double delta_t)
     Q(7,6) = system_noise_yaw_var * pow(delta_t, 3) / 2.0;
     Q(7,7) = system_noise_yaw_var * pow(delta_t, 2);
 
+    Q(8,8) = system_noise_a_var * pow(delta_t, 2);
+    Q(9,9) = system_noise_a_var * pow(delta_t, 2);
+
     P_k1_k = F*P_k*F.transpose() + Q;
 }
 
@@ -120,13 +127,15 @@ void TrackingObject::calc_kalman_gain()
     K = P_k1_k * H.transpose() * S.inverse();
 }
 
-void TrackingObject::calc_st(double x, double y, double yaw)
+void TrackingObject::calc_st(double x, double y, double yaw, double w, double h)
 {
     Matrix<double, _st_DIM, 1> st_temp;
     Matrix<double, _Z_DIM, 1> z;
     z(0,0) = x;
     z(1,0) = y;
     z(2,0) = yaw;
+    z(3,0) = w;
+    z(4,0) = h;
     
     st_temp = st_k1_k + K * (z - H * st_k1_k);
     st_k =  st_temp;
@@ -159,6 +168,8 @@ vector<double> TrackingObject::return_st_for_msg()
     output.push_back(st_k(5,0));
     output.push_back(st_k(6,0));
     output.push_back(st_k(7,0));
+    output.push_back(st_k(8,0));
+    output.push_back(st_k(9,0));
 
     return output;
 }

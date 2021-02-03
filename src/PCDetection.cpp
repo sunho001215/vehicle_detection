@@ -183,7 +183,7 @@ void DataSubscriber::callback(const PointCloud::ConstPtr& pc_msg1, const PointCl
         tf::Transform m = lidar_tf_1 * tf::Transform(id, p);
         tf::Vector3 v = m.getOrigin();
         new_point = vector_to_point(v);
-        if (!((new_point.x >= 0) && (new_point.x <= 4.5) && (new_point.y >= -1) && (new_point.y <= 1)))
+        if (!((new_point.x >= 0) && (new_point.x <= 4.5) && (new_point.y >= -1) && (new_point.y <= 1)) && (new_point.z <= 3))
         {
             if ((new_point.x * map_scale + img_cor_y >= 0) && (new_point.x * map_scale + img_cor_y < map_height)){
                 if((new_point.y * map_scale + img_cor_x >= 0) && (new_point.y * map_scale + img_cor_x < map_width)){
@@ -210,7 +210,7 @@ void DataSubscriber::callback(const PointCloud::ConstPtr& pc_msg1, const PointCl
         tf::Vector3 v = m.getOrigin();
         new_point = vector_to_point(v);
 
-        if (!((new_point.x >= 0) && (new_point.x <= 4.5) && (new_point.y >= -1) && (new_point.y <= 1)))
+        if (!((new_point.x >= 0) && (new_point.x <= 4.5) && (new_point.y >= -1) && (new_point.y <= 1)) && (new_point.z <= 3))
         {
             if ((new_point.x * map_scale + img_cor_y >= 0) && (new_point.x * map_scale + img_cor_y < map_height)){
                 if((new_point.y * map_scale + img_cor_x >= 0) && (new_point.y * map_scale + img_cor_x < map_width)){
@@ -237,6 +237,8 @@ void DataSubscriber::callback(const PointCloud::ConstPtr& pc_msg1, const PointCl
             if(BEV_map.at<cv::Vec3f>(j,i)[2] == 1.0){
                 BEV_map.at<cv::Vec3f>(j,i)[0] = (BEV_map.at<cv::Vec3f>(j,i)[0] - z_min) / (z_max - z_min);
                 if(BEV_map.at<cv::Vec3f>(j,i)[0] > 1.0){
+                    // BEV_map.at<cv::Vec3f>(j,i)[0] = 0.0;
+                    // BEV_map.at<cv::Vec3f>(j,i)[2] = 0.0;
                     BEV_map.at<cv::Vec3f>(j,i)[0] = 1.0;
                 }
             }

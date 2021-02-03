@@ -7,8 +7,8 @@
 using namespace Eigen;
 using namespace std;
 
-#define _st_DIM 8
-#define _Z_DIM 3
+#define _st_DIM 10
+#define _Z_DIM 5
 
 class TrackingObject{
     private:
@@ -25,12 +25,11 @@ class TrackingObject{
 
     public:
         int count, obj_num, obj_class;
-        double w, h;
         TrackingObject(double x, double y, double yaw, int obj_class, double w, double h, int obj_num);
         void calc_st_pred(double delta_t);
         void calc_P_k1_k(double delta_t);
         void calc_kalman_gain();
-        void calc_st(double x, double y, double yaw);
+        void calc_st(double x, double y, double yaw, double w, double h);
         void calc_P();
         void sub_st_pred_to_st();
         vector<double> return_st_pred();

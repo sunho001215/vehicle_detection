@@ -316,7 +316,7 @@ void Tracker::tracker_input_callback(const vehicle_detection::tracker_input::Con
                         int idx = edge[i];
                         tracking_objects[i].calc_P_k1_k(delta_t);
                         tracking_objects[i].calc_kalman_gain();
-                        tracking_objects[i].calc_st(detected_objs[idx][0], detected_objs[idx][1], detected_objs[idx][2]);
+                        tracking_objects[i].calc_st(detected_objs[idx][0], detected_objs[idx][1], detected_objs[idx][2], detected_objs[idx][4], detected_objs[idx][5]);
                         tracking_objects[i].calc_P();
                         tracking_objects[i].count = 0;
                     }
@@ -387,8 +387,8 @@ void Tracker::tracker_input_callback(const vehicle_detection::tracker_input::Con
             tmp.y_dd = output[5];
             tmp.yaw = output[6];
             tmp.yaw_rate = output[7];
-            tmp.w = tracking_objects[i].w;
-            tmp.h = tracking_objects[i].h;
+            tmp.w = output[8];
+            tmp.h = output[9];
             msg_out.data.push_back(tmp);
         }
 
